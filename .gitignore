@@ -67,4 +67,3 @@ qdrant-dump/
 
 # MinIO local data
 minio-data/
-.github/workflows/
