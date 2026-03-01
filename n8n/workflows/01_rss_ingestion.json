@@ -1,0 +1,170 @@
+{
+  "name": "01 - RSS 新聞入庫管線",
+  "nodes": [
+    {
+      "id": "trigger_schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [100, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "minutes", "minutesInterval": 15}]
+        }
+      },
+      "notes": "每15分鐘輪詢所有 RSS 來源"
+    },
+    {
+      "id": "rss_batch",
+      "name": "RSS 來源清單",
+      "type": "n8n-nodes-base.set",
+      "position": [300, 300],
+      "parameters": {
+        "values": {
+          "array": [
+            {"name": "feeds", "value": [
+              {"id": "cnyes_semi",    "url": "https://news.cnyes.com/news/cat/SEMICONDUCTOR/rss", "lang": "zh", "priority": 1},
+              {"id": "reuters_tech",  "url": "https://feeds.reuters.com/reuters/technologyNews", "lang": "en", "priority": 1},
+              {"id": "eetimes",       "url": "https://www.eetimes.com/feed/", "lang": "en", "priority": 1},
+              {"id": "trendforce",    "url": "https://www.trendforce.com/rss/presscenter.xml", "lang": "en", "priority": 1},
+              {"id": "technews",      "url": "https://technews.tw/feed/", "lang": "zh", "priority": 2},
+              {"id": "chip_wars",     "url": "https://amritaroy.substack.com/feed", "lang": "en", "priority": 2},
+              {"id": "isw",           "url": "https://understandingwar.org/rss.xml", "lang": "en", "priority": 2},
+              {"id": "digitimes_en",  "url": "https://www.digitimes.com/rss/daily.xml", "lang": "en", "priority": 1},
+              {"id": "axios_tech",    "url": "https://api.axios.com/feed/technology", "lang": "en", "priority": 2},
+              {"id": "aei",           "url": "https://www.aei.org/feed/", "lang": "en", "priority": 2}
+            ]}
+          ]
+        }
+      }
+    },
+    {
+      "id": "split_feeds",
+      "name": "SplitInBatches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [500, 300],
+      "parameters": {"batchSize": 1, "options": {}}
+    },
+    {
+      "id": "fetch_rss",
+      "name": "讀取 RSS Feed",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "position": [700, 300],
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {"ignoreSSL": false}
+      }
+    },
+    {
+      "id": "dedup_check",
+      "name": "Redis 去重檢查",
+      "type": "n8n-nodes-base.redis",
+      "position": [900, 300],
+      "parameters": {
+        "operation": "set",
+        "key": "=graphrag:dedup:{{ $json.link | replace('https://','') | replace('http://','') | hash('md5') }}",
+        "value": "1",
+        "keyType": "string",
+        "expireSeconds": 604800,
+        "options": {"setMode": "nx"}
+      },
+      "credentials": {"redis": "Redis Default"}
+    },
+    {
+      "id": "filter_new",
+      "name": "過濾已處理",
+      "type": "n8n-nodes-base.if",
+      "position": [1100, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [{"value1": "={{ $json.success }}", "value2": true}]
+        }
+      }
+    },
+    {
+      "id": "call_ingest_api",
+      "name": "FastAPI /ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1300, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/ingest/article",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "title",   "value": "={{ $json.title }}"},
+            {"name": "content", "value": "={{ $json.contentSnippet }}"},
+            {"name": "url",     "value": "={{ $json.link }}"},
+            {"name": "source",  "value": "={{ $json.feed_id }}"},
+            {"name": "published_at", "value": "={{ $json.pubDate }}"}
+          ]
+        },
+        "options": {"timeout": 30000}
+      }
+    },
+    {
+      "id": "log_to_postgres",
+      "name": "記錄到 PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1500, 250],
+      "parameters": {
+        "operation": "insert",
+        "table": "crawl_logs",
+        "columns": "source,urls_found,urls_new,crawled_at",
+        "values": "={{ $json.feed_id }},1,1,NOW()"
+      },
+      "credentials": {"postgres": "PostgreSQL Default"}
+    },
+    {
+      "id": "check_high_priority",
+      "name": "高優先新聞?",
+      "type": "n8n-nodes-base.if",
+      "position": [1700, 250],
+      "parameters": {
+        "conditions": {
+          "string": [{
+            "value1": "={{ $json.keywords.join(',') }}",
+            "operation": "contains",
+            "value2": "台積電,TSMC,HBM,CoWoS,DRAM,出口禁令,台海"
+          }]
+        }
+      }
+    },
+    {
+      "id": "whatsapp_alert",
+      "name": "WhatsApp 即時警報",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1900, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11235/message/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "to",      "value": "+886936737850"},
+            {"name": "message", "value": "=📡 重要新聞: {{ $json.title }}\n{{ $json.url }}"}
+          ]
+        }
+      },
+      "notes": "透過 OpenClaw WhatsApp 發送（需設定 local endpoint）"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {"main": [[{"node": "RSS 來源清單", "type": "main", "index": 0}]]},
+    "RSS 來源清單": {"main": [[{"node": "SplitInBatches", "type": "main", "index": 0}]]},
+    "SplitInBatches": {"main": [[{"node": "讀取 RSS Feed", "type": "main", "index": 0}]]},
+    "讀取 RSS Feed": {"main": [[{"node": "Redis 去重檢查", "type": "main", "index": 0}]]},
+    "Redis 去重檢查": {"main": [[{"node": "過濾已處理", "type": "main", "index": 0}]]},
+    "過濾已處理": {"main": [
+      [{"node": "FastAPI /ingest", "type": "main", "index": 0}],
+      []
+    ]},
+    "FastAPI /ingest": {"main": [[{"node": "記錄到 PostgreSQL", "type": "main", "index": 0}]]},
+    "記錄到 PostgreSQL": {"main": [[{"node": "高優先新聞?", "type": "main", "index": 0}]]},
+    "高優先新聞?": {"main": [
+      [{"node": "WhatsApp 即時警報", "type": "main", "index": 0}],
+      []
+    ]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "tags": ["ingestion", "rss", "realtime"]
+}

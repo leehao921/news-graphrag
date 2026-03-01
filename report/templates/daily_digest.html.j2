@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>半導體 + 台股 產業日報 {{ report_date }}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: "Noto Sans TC", "PingFang TC", sans-serif;
+      font-size: 11pt;
+      color: #2c3e50;
+      margin: 0;
+      padding: 0;
+    }
+    
+    /* ── 封面頁 ─────────────────── */
+    .cover {
+      background: linear-gradient(135deg, #1a237e 0%, #283593 60%, #3949ab 100%);
+      color: white;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 4cm;
+      page-break-after: always;
+    }
+    .cover h1 { font-size: 28pt; margin-bottom: 0.3em; }
+    .cover .subtitle { font-size: 14pt; opacity: 0.85; margin-bottom: 2em; }
+    .cover .meta { font-size: 10pt; opacity: 0.7; line-height: 1.8; }
+    .cover .badge {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 20px;
+      padding: 0.3em 1em;
+      font-size: 9pt;
+      margin-bottom: 1em;
+    }
+    
+    /* ── 本文頁面 ───────────────── */
+    .page {
+      margin: 1.5cm 2cm;
+      page-break-inside: avoid;
+    }
+
+    /* ── 章節標題 ───────────────── */
+    h2.section {
+      font-size: 14pt;
+      color: #1a237e;
+      border-left: 4px solid #3f51b5;
+      padding-left: 0.6em;
+      margin: 1.5em 0 0.8em;
+    }
+    h3 { font-size: 11pt; color: #283593; margin: 1em 0 0.4em; }
+
+    /* ── 執行摘要 ───────────────── */
+    .summary-box {
+      background: #e8eaf6;
+      border-left: 4px solid #3f51b5;
+      border-radius: 6px;
+      padding: 1em 1.2em;
+      line-height: 1.8;
+      margin: 0.8em 0;
+    }
+
+    /* ── 信號盒 ──────────────────── */
+    .signal-box {
+      border-radius: 8px;
+      padding: 1em 1.2em;
+      margin: 0.8em 0;
+    }
+    .signal-box.bullish { background: #e8f5e9; border-left: 4px solid #43a047; }
+    .signal-box.bearish { background: #ffebee; border-left: 4px solid #e53935; }
+    .signal-box.neutral { background: #fff3e0; border-left: 4px solid #fb8c00; }
+    .signal-box .label {
+      font-size: 13pt;
+      font-weight: 700;
+      margin-bottom: 0.5em;
+    }
+    .signal-box.bullish .label { color: #2e7d32; }
+    .signal-box.bearish .label { color: #c62828; }
+    .signal-box.neutral .label  { color: #e65100; }
+
+    /* ── 新聞卡片 ───────────────── */
+    .news-card {
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 0.7em 1em;
+      margin: 0.4em 0;
+      background: #fafafa;
+    }
+    .news-card .news-title { font-weight: 700; font-size: 10.5pt; margin-bottom: 0.2em; }
+    .news-card .news-meta  { font-size: 9pt; color: #666; }
+    .news-card .news-url   { font-size: 8.5pt; color: #3f51b5; word-break: break-all; }
+
+    /* ── 實體標籤 ───────────────── */
+    .entity-tags { display: flex; flex-wrap: wrap; gap: 0.4em; margin: 0.6em 0; }
+    .entity-tag {
+      background: #e3f2fd;
+      color: #1565c0;
+      border-radius: 12px;
+      padding: 0.2em 0.7em;
+      font-size: 9pt;
+      font-weight: 600;
+    }
+    .entity-tag.company { background: #e8eaf6; color: #283593; }
+    .entity-tag.event   { background: #fce4ec; color: #880e4f; }
+
+    /* ── 表格 ───────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 0.6em 0; }
+    th { background: #283593; color: white; padding: 0.5em; text-align: left; }
+    td { padding: 0.4em; border-bottom: 1px solid #e0e0e0; }
+    tr:nth-child(even) td { background: #f5f5f5; }
+
+    /* ── 頁眉/頁腳 ──────────────── */
+    @page {
+      margin: 1.5cm 2cm 2cm;
+      @top-center {
+        content: "半導體 + 台股 產業日報 | " string(report_date);
+        font-size: 9pt; color: #666;
+      }
+      @bottom-right {
+        content: counter(page) " / " counter(pages);
+        font-size: 9pt; color: #666;
+      }
+    }
+    
+    /* WeasyPrint 分頁 */
+    .section-break { page-break-before: always; }
+    .no-break { page-break-inside: avoid; }
+    
+    /* ── 條形圖 ──────────────────── */
+    .progress-bar {
+      background: #e0e0e0; border-radius: 4px; height: 8px; margin: 0.3em 0;
+    }
+    .progress-fill {
+      height: 100%; border-radius: 4px;
+      background: linear-gradient(90deg, #3f51b5, #7986cb);
+    }
+    .progress-fill.green { background: linear-gradient(90deg, #43a047, #81c784); }
+    .progress-fill.red   { background: linear-gradient(90deg, #e53935, #ef9a9a); }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════ 封面 ══════════════════════ -->
+<div class="cover">
+  <div class="badge">🤖 GraphRAG AI 生成報告</div>
+  <h1>📊 半導體 + 台股<br>產業日報</h1>
+  <p class="subtitle">供應鏈 · 財報 · 地緣政治 · TMF 交易信號</p>
+  <p class="meta">
+    📅 報告日期：{{ report_date }}<br>
+    ⏰ 生成時間：{{ generated_at }}<br>
+    📰 收錄新聞：{{ article_count }} 則<br>
+    🔍 資料來源：{{ articles_by_domain|length }} 個領域
+  </p>
+</div>
+
+<!-- ══════════════════════ 執行摘要 ══════════════════ -->
+<div class="page">
+<h2 class="section">🔍 執行摘要 Executive Summary</h2>
+<div class="summary-box">{{ executive_summary }}</div>
+
+<!-- ── 熱門實體 ── -->
+{% if hot_entities %}
+<h3>今日熱門公司 / 實體</h3>
+<div class="entity-tags">
+{% for entity in hot_entities %}
+  <span class="entity-tag {{ entity.entity_type|lower if entity.entity_type else 'company' }}">
+    {{ entity.name }}{% if entity.ticker %} ({{ entity.ticker }}){% endif %}
+    — {{ entity.mentions }} 則
+  </span>
+{% endfor %}
+</div>
+{% endif %}
+</div>
+
+<!-- ══════════════════════ TMF 信號 ══════════════════ -->
+{% if "tmf_trading_implications" in sections and tmf_signals %}
+<div class="page no-break">
+<h2 class="section">🌊 TMF 期貨交易信號</h2>
+
+<div class="signal-box {{ tmf_signals.direction|lower }}">
+  <div class="label">
+    {% if tmf_signals.direction == "BULLISH" %}📈 偏多（Bullish Bias）
+    {% elif tmf_signals.direction == "BEARISH" %}📉 偏空（Bearish Bias）
+    {% else %}⚖️ 中性觀望（Neutral）
+    {% endif %}
+    ｜ 信心度：{{ tmf_signals.confidence }}%
+  </div>
+  
+  {% if tmf_signals.bullish_factors %}
+  <p style="color:#2e7d32; margin-top:0.5em;"><strong>多頭因素:</strong></p>
+  <ul>{% for f in tmf_signals.bullish_factors %}<li>✅ {{ f }}</li>{% endfor %}</ul>
+  {% endif %}
+  
+  {% if tmf_signals.bearish_factors %}
+  <p style="color:#c62828; margin-top:0.5em;"><strong>空頭因素:</strong></p>
+  <ul>{% for f in tmf_signals.bearish_factors %}<li>❌ {{ f }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+</div>
+{% endif %}
+
+<!-- ══════════════════════ 半導體供應鏈 ══════════════ -->
+{% if "semiconductor_supply_chain" in sections and supply_chain %}
+<div class="page section-break">
+<h2 class="section">🔬 半導體供應鏈重要動態</h2>
+{% for article in supply_chain %}
+<div class="news-card no-break">
+  <div class="news-title">{{ article.title }}</div>
+  <div class="news-meta">
+    📍 {{ article.source }} ｜ 🕐 {{ article.published_at[:16] if article.published_at else '' }}
+    {% if article.sentiment_score is defined %}
+      ｜ 情感：{{ "😊 正面" if article.sentiment_score > 0.2 else ("😐 中性" if article.sentiment_score > -0.2 else "😟 負面") }}
+    {% endif %}
+  </div>
+  {% if article.url %}<div class="news-url">🔗 {{ article.url }}</div>{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<!-- ══════════════════════ 財報亮點 ══════════════════ -->
+{% if "earnings_highlights" in sections and earnings %}
+<div class="page section-break">
+<h2 class="section">💰 財報 & 法說會亮點</h2>
+{% for article in earnings %}
+<div class="news-card no-break">
+  <div class="news-title">{{ article.title }}</div>
+  <div class="news-meta">{{ article.source }} ｜ {{ article.published_at[:16] if article.published_at else '' }}</div>
+  {% if article.url %}<div class="news-url">🔗 {{ article.url }}</div>{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<!-- ══════════════════════ 地緣政治 ══════════════════ -->
+{% if "geopolitical_events" in sections and geopolitics %}
+<div class="page section-break">
+<h2 class="section">🌏 地緣政治 & 國際事件</h2>
+{% for article in geopolitics %}
+<div class="news-card no-break">
+  <div class="news-title">{{ article.title }}</div>
+  <div class="news-meta">{{ article.source }} ｜ {{ article.published_at[:16] if article.published_at else '' }}</div>
+  {% if article.url %}<div class="news-url">🔗 {{ article.url }}</div>{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<!-- ══════════════════════ 頁腳 ══════════════════════ -->
+<div class="page" style="margin-top: 2em; border-top: 1px solid #e0e0e0; padding-top: 1em;">
+  <p style="font-size:8.5pt; color:#999;">
+    本報告由 GraphRAG News System 自動生成，資料來源包含 TrendForce、Reuters、EE Times、
+    鉅亨網、MOPS 等 {{ article_count }} 則新聞。本報告僅供資訊參考，不構成投資建議。<br>
+    生成時間：{{ generated_at }} ｜ 系統版本：v1.0
+  </p>
+</div>
+
+</body>
+</html>

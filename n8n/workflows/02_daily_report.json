@@ -1,0 +1,169 @@
+{
+  "name": "02 - 每日產業報告生成",
+  "nodes": [
+    {
+      "id": "trigger_daily",
+      "name": "每日 07:30 觸發",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [100, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "30 7 * * 1-5"}]
+        }
+      },
+      "notes": "週一至週五 07:30 台北時間，開盤前自動生成報告"
+    },
+    {
+      "id": "set_date",
+      "name": "設定日期參數",
+      "type": "n8n-nodes-base.set",
+      "position": [300, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            {"name": "report_date", "value": "={{ DateTime.now().setZone('Asia/Taipei').toFormat('yyyy-MM-dd') }}"},
+            {"name": "report_title", "value": "=半導體 + 台股 產業日報 {{ DateTime.now().setZone('Asia/Taipei').toFormat('yyyy-MM-dd') }}"}
+          ],
+          "number": [
+            {"name": "lookback_hours", "value": 24}
+          ]
+        }
+      }
+    },
+    {
+      "id": "query_qdrant",
+      "name": "查詢 Qdrant：昨日重要新聞",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [500, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://qdrant:6333/collections/news_articles/points/scroll",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "limit", "value": 50},
+            {"name": "with_payload", "value": true},
+            {"name": "filter", "value": "={ \"must\": [{ \"range\": { \"key\": \"published_at\", \"gt\": \"{{ DateTime.now().minus({hours: 24}).toISO() }}\" }}]}"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "query_neo4j_entities",
+      "name": "查詢 Neo4j：熱門實體",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [500, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "http://neo4j:7474/db/neo4j/tx/commit",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "basicAuth",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "{\"statements\": [{\"statement\": \"MATCH (a:Article)-[:MENTIONS]->(e:Entity) WHERE a.published_at > datetime() - duration('P1D') RETURN e.name, e.ticker, count(a) as mentions ORDER BY mentions DESC LIMIT 20\"}]}",
+        "notes": "找出過去24小時被提及最多的公司/實體"
+      }
+    },
+    {
+      "id": "generate_report",
+      "name": "FastAPI 生成報告",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [800, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/report/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "report_type", "value": "daily_digest"},
+            {"name": "date",        "value": "={{ $json.report_date }}"},
+            {"name": "articles",    "value": "={{ JSON.stringify($node['查詢 Qdrant：昨日重要新聞'].json.result.points) }}"},
+            {"name": "hot_entities","value": "={{ JSON.stringify($node['查詢 Neo4j：熱門實體'].json.results[0].data) }}"},
+            {"name": "format",      "value": "pdf"},
+            {"name": "include_sections", "value": [
+              "executive_summary",
+              "semiconductor_supply_chain",
+              "earnings_highlights",
+              "geopolitical_events",
+              "market_signals",
+              "tmf_trading_implications"
+            ]}
+          ]
+        },
+        "options": {"timeout": 120000}
+      }
+    },
+    {
+      "id": "upload_to_minio",
+      "name": "上傳 PDF 到 MinIO",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1000, 300],
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://minio:9000/reports/daily/{{ $node['設定日期參數'].json.report_date }}.pdf",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "s3",
+        "sendBody": true,
+        "bodyContentType": "binaryData",
+        "inputDataFieldName": "report_pdf"
+      },
+      "notes": "儲存 PDF 到 MinIO，永久保存"
+    },
+    {
+      "id": "save_report_metadata",
+      "name": "儲存報告元數據",
+      "type": "n8n-nodes-base.postgres",
+      "position": [1200, 300],
+      "parameters": {
+        "operation": "insert",
+        "table": "reports",
+        "columns": "title,report_date,report_type,minio_path,article_count,generated_at",
+        "values": "={{ $json.title }},{{ $json.report_date }},daily_digest,/reports/daily/{{ $json.report_date }}.pdf,{{ $json.article_count }},NOW()"
+      }
+    },
+    {
+      "id": "send_whatsapp",
+      "name": "WhatsApp 發送摘要",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1400, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11235/message/send",
+        "sendBody": true,
+        "body": "={{ JSON.stringify({ \"to\": \"+886936737850\", \"message\": '📊 **' + $node['設定日期參數'].json.report_title + '**\\n\\n' + $json.executive_summary + '\\n\\n📥 完整報告: http://localhost:9000/reports/daily/' + $json.report_date + '.pdf' }) }}"
+      },
+      "notes": "發送報告摘要到 WhatsApp，附帶 PDF 下載連結"
+    },
+    {
+      "id": "send_email",
+      "name": "Email 附件發送（可選）",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [1400, 400],
+      "parameters": {
+        "toEmail": "${REPORT_EMAIL:-}",
+        "subject": "={{ $node['設定日期參數'].json.report_title }}",
+        "emailFormat": "html",
+        "html": "={{ $json.report_html }}",
+        "attachments": "report_pdf"
+      },
+      "notes": "可選：寄送 PDF 附件到 email（需在 n8n 設定 SMTP credentials）"
+    }
+  ],
+  "connections": {
+    "每日 07:30 觸發": {"main": [[{"node": "設定日期參數", "type": "main", "index": 0}]]},
+    "設定日期參數": {"main": [[
+      {"node": "查詢 Qdrant：昨日重要新聞", "type": "main", "index": 0},
+      {"node": "查詢 Neo4j：熱門實體", "type": "main", "index": 0}
+    ]]},
+    "查詢 Qdrant：昨日重要新聞": {"main": [[{"node": "FastAPI 生成報告", "type": "main", "index": 0}]]},
+    "查詢 Neo4j：熱門實體": {"main": [[{"node": "FastAPI 生成報告", "type": "main", "index": 0}]]},
+    "FastAPI 生成報告": {"main": [[{"node": "上傳 PDF 到 MinIO", "type": "main", "index": 0}]]},
+    "上傳 PDF 到 MinIO": {"main": [[{"node": "儲存報告元數據", "type": "main", "index": 0}]]},
+    "儲存報告元數據": {"main": [[
+      {"node": "WhatsApp 發送摘要", "type": "main", "index": 0},
+      {"node": "Email 附件發送（可選）", "type": "main", "index": 0}
+    ]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "tags": ["report", "daily", "scheduled"]
+}

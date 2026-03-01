@@ -1,0 +1,168 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# news-graphrag / config/crawl_schedule.yaml
+# APScheduler 爬蟲排程設定
+#
+# 設計原則:
+#   - 不同層次資料更新頻率不同
+#   - 法說會/財報 = 事件觸發（不定期）
+#   - 地緣政治 = 每日一次
+#   - 即時財經新聞 = 每15-30分鐘
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ── 高頻即時新聞（每15分鐘）────────────────────────────────────────────────
+  - name: rss_realtime
+    description: "RSS 即時財經新聞"
+    cron: "*/15 8-17 * * 1-5"   # 平日交易時段 15分鐘一次
+    sources:
+      - cnyes_semiconductor
+      - cnyes_tw_stock
+      - reuters_tech
+      - reuters_markets
+    batch_size: 20
+    timeout_secs: 30
+    dedup_window_hours: 24
+
+  - name: rss_realtime_offhours
+    description: "RSS 非交易時段（夜盤/週末緩掃）"
+    cron: "0 */2 * * *"          # 每2小時一次（非交易時段）
+    sources:
+      - cnyes_semiconductor
+      - cnyes_tw_stock
+      - reuters_tech
+      - reuters_markets
+    batch_size: 10
+    timeout_secs: 30
+    dedup_window_hours: 24
+
+  # ── 中頻產業新聞（每60分鐘）────────────────────────────────────────────────
+  - name: rss_industry
+    description: "半導體產業媒體"
+    cron: "0 * * * *"            # 每小時整點
+    sources:
+      - eetimes
+      - toms_hardware_semi
+      - digitimes_en
+      - technews_tw
+      - technews_ai
+      - ctee_semiconductor
+      - moneydj_semi
+      - axios_tech
+    batch_size: 30
+    timeout_secs: 60
+    dedup_window_hours: 48
+
+  # ── 低頻深度分析（每4小時）──────────────────────────────────────────────────
+  - name: rss_analysis
+    description: "深度分析報告（週報/電子報）"
+    cron: "0 */4 * * *"
+    sources:
+      - trendforce_en
+      - semiconductor_digest
+      - techinsights_blog
+      - chip_war_substack
+      - semianalysis
+      - fabricated_knowledge
+    batch_size: 10
+    timeout_secs: 60
+    dedup_window_hours: 72
+
+  # ── 地緣政治（每日）────────────────────────────────────────────────────────
+  - name: rss_geopolitics
+    description: "地緣政治與國際事件"
+    cron: "0 7 * * *"            # 每日07:00（台北時間，市場開盤前）
+    sources:
+      - isw_china_taiwan
+      - aei_china_taiwan
+      - csis_technology
+      - diplomat_asia
+      - cfr_technology
+      - war_on_rocks
+      - ft_tech
+      - wsj_tech
+    filter:
+      must_contain_any: ["Taiwan", "semiconductor", "chip", "TSMC", "supply chain",
+                         "export control", "tariff", "AI", "HBM", "Strait"]
+    batch_size: 20
+    timeout_secs: 60
+    dedup_window_hours: 72
+
+  # ── 財報公告（每日）─────────────────────────────────────────────────────────
+  - name: earnings_mops
+    description: "台灣 MOPS 重大訊息（含財報公告）"
+    cron: "*/30 8-18 * * 1-5"   # 平日 8:00-18:00 每30分鐘
+    sources:
+      - mops_major_news
+    scraper_config:
+      target_tickers: ["2330", "2454", "2317", "2308", "2382", "2303", "3711", "3034", "2379"]
+      event_types: ["營收公告", "重大訊息", "法說會", "財報公告", "除息/除權"]
+    timeout_secs: 90
+
+  - name: earnings_sec_edgar
+    description: "美國 SEC 財報公告（8-K / 10-Q）"
+    cron: "0 21 * * 1-5"        # 美市收盤後（台北時間21:00）
+    sources:
+      - sec_edgar_earnings
+    api_config:
+      form_types: ["8-K", "10-Q", "10-K"]
+      lookback_days: 1
+    timeout_secs: 120
+
+  - name: earnings_ir_pages
+    description: "各公司 IR 頁面法說會資訊"
+    cron: "0 9,15 * * 1-5"      # 每日上午9點、下午3點
+    sources:
+      - tsmc_ir
+      - mtk_ir
+      - yahoo_earnings_calendar
+    timeout_secs: 120
+
+  # ── 定價數據（每週）────────────────────────────────────────────────────────
+  - name: market_pricing
+    description: "記憶體/晶片定價數據"
+    cron: "0 10 * * 1"          # 每週一上午10點（TrendForce通常週一更新）
+    sources:
+      - trendforce_dram_price
+      - trendforce_nand_price
+    timeout_secs: 60
+
+  # ── 產業機構週報（每週）────────────────────────────────────────────────────
+  - name: weekly_industry_reports
+    description: "SEMI/TrendForce/Deloitte 週報"
+    cron: "0 8 * * 1"           # 每週一08:00
+    sources:
+      - semi_org
+    timeout_secs: 60
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 事件觸發爬蟲（Event-Driven，不按時間排程）
+# ─────────────────────────────────────────────────────────────────────────────
+event_triggers:
+
+  - name: earnings_alert
+    description: "財報公告 → 立即爬取相關評論"
+    trigger: "mops_major_news:earning_announcement"
+    action:
+      - crawl: [cnyes_semiconductor, moneydj_semi, reuters_tech]
+        query_template: "{company_name} {year}Q{quarter} 財報"
+        delay_secs: 300   # 等5分鐘讓評論出現
+
+  - name: geopolitical_shock
+    description: "地緣政治重大事件 → 立即全源爬取"
+    trigger: "keyword_alert:['台海', 'Strait', '出口禁令', 'export ban', '制裁']"
+    action:
+      - crawl: [reuters_tech, ft_tech, axios_tech, isw_china_taiwan]
+        priority_override: 1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 全域設定
+# ─────────────────────────────────────────────────────────────────────────────
+global:
+  max_concurrent_crawlers: 5
+  request_delay_ms: 500          # 禮貌爬取間隔
+  user_agent: "GraphRAG-NewsBot/1.0 (+https://github.com/leehao921/database)"
+  redis_queue: "graphrag:crawl:queue"
+  redis_dedup_set: "graphrag:dedup:urls"
+  embedding_queue: "graphrag:embed:queue"
+  graph_update_queue: "graphrag:graph:queue"

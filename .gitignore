@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker volumes / runtime data
+data/
+*.sqlite
+*.db
+
+# Models & large files
+models/
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Reports / generated output (don't commit PDFs)
+report/output/
+*.pdf
+*.html.generated
+
+# Node / n8n
+node_modules/
+.n8n/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Test artifacts
+tests/fixtures/generated/
+
+# Neo4j / Qdrant local dumps
+neo4j-dump/
+qdrant-dump/
+
+# MinIO local data
+minio-data/

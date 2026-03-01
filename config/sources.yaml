@@ -1,0 +1,624 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# news-graphrag / config/sources.yaml
+# 新聞來源總覽設定
+#
+# 分層架構:
+#   Layer 1 - Free RSS     → feedparser 每 30 分鐘爬一次
+#   Layer 2 - Web Scrape   → Playwright 每 2 小時
+#   Layer 3 - Struct API   → 結構化 API / JSON (高品質)
+#   Layer 4 - Premium/PDF  → 人工上傳 or Email 解析
+#
+# 欄位說明:
+#   id          唯一識別碼
+#   name        顯示名稱
+#   url         主頁 URL
+#   feed        RSS/Atom 端點（Layer 1）
+#   layer       1-4
+#   language    zh / en / bilingual
+#   domains     對應 Domain Enum（see models.py）
+#   priority    1(最高)–5(最低)，影響爬取頻率與 embedding 優先級
+#   update_freq  預計更新頻率（分鐘）
+#   paywall     true = 有訂閱牆
+#   notes       備註
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: "1.0"
+  created: "2026-03-02"
+  total_sources: 42
+  auto_crawl_count: 28   # Layer 1+2+3
+  premium_count: 14      # Layer 4
+
+# =============================================================================
+# 第一層：台灣本地 — 半導體 & 財經（繁體中文）
+# =============================================================================
+taiwan_domestic:
+
+  # ── 即時財經新聞 ──────────────────────────────────────────────────────────
+  - id: cnyes_semiconductor
+    name: 鉅亨網 半導體
+    url: https://news.cnyes.com/news/cat/SEMICONDUCTOR
+    feed: https://news.cnyes.com/news/cat/SEMICONDUCTOR/rss
+    layer: 1
+    language: zh
+    domains: [semiconductor, earnings, macro]
+    priority: 1
+    update_freq: 15
+    paywall: false
+    notes: "台灣最即時的半導體財經新聞，含個股重大訊息"
+
+  - id: cnyes_tw_stock
+    name: 鉅亨網 台股新聞
+    url: https://news.cnyes.com/news/cat/TWSTOCK
+    feed: https://news.cnyes.com/news/cat/TWSTOCK/rss
+    layer: 1
+    language: zh
+    domains: [earnings, macro]
+    priority: 1
+    update_freq: 15
+    paywall: false
+
+  - id: moneydj_semi
+    name: MoneyDJ 半導體類股
+    url: https://www.moneydj.com/kbhost/tradingcategory/TC0000000800/list
+    feed: https://www.moneydj.com/rss/news.xml
+    layer: 1
+    language: zh
+    domains: [semiconductor, earnings]
+    priority: 2
+    update_freq: 30
+    paywall: false
+    notes: "含法說會即時轉播、分析師報告摘要"
+
+  - id: ctee_semiconductor
+    name: 工商時報 科技
+    url: https://ctee.com.tw/category/tech
+    feed: https://ctee.com.tw/feed/
+    layer: 1
+    language: zh
+    domains: [semiconductor, macro, geopolitical]
+    priority: 2
+    update_freq: 60
+    paywall: false
+    notes: "深度分析、產業評論，每日更新"
+
+  - id: technews_tw
+    name: 科技新報 TechNews
+    url: https://technews.tw
+    feed: https://technews.tw/feed/
+    layer: 1
+    language: zh
+    domains: [semiconductor, general]
+    priority: 2
+    update_freq: 60
+    paywall: false
+    notes: "台灣科技媒體，涵蓋 AI/半導體/供應鏈，有完整文章全文"
+
+  - id: technews_ai
+    name: 科技新報 AI專區
+    url: https://technews.tw/category/ai/
+    feed: https://technews.tw/category/ai/feed/
+    layer: 1
+    language: zh
+    domains: [semiconductor, general]
+    priority: 2
+    update_freq: 60
+    paywall: false
+
+  # ── 法規 / 公開資訊（MOPS）────────────────────────────────────────────────
+  - id: mops_major_news
+    name: 公開資訊觀測站 重大訊息
+    url: https://mopsov.twse.com.tw/mops/web/t05sr01_1
+    feed: null  # No RSS — use Playwright scraper
+    layer: 2
+    language: zh
+    domains: [earnings]
+    priority: 1
+    update_freq: 30
+    paywall: false
+    scraper: "mops_scraper"
+    target_tickers: ["2330", "2454", "2317", "2308", "2382", "2303", "3711", "3034", "2379"]
+    notes: "上市公司重大訊息（法說會、獲利預告、重要合約），優先爬取前10大電子股"
+
+  - id: twse_market_notice
+    name: 台灣證券交易所 市場公告
+    url: https://www.twse.com.tw/zh/announcement/notice.html
+    feed: null
+    layer: 2
+    language: zh
+    domains: [macro]
+    priority: 3
+    update_freq: 120
+    paywall: false
+    scraper: "twse_scraper"
+
+  # ── 數位時代 / 半導體業界 ─────────────────────────────────────────────────
+  - id: digitimes_zh
+    name: 電子時報 DigiTimes（中文版）
+    url: https://www.digitimes.com.tw
+    feed: https://www.digitimes.com.tw/rss/news.xml
+    layer: 1
+    language: zh
+    domains: [semiconductor, general]
+    priority: 1
+    update_freq: 60
+    paywall: true
+    notes: "台灣半導體產業第一手供應鏈情報，部分需訂閱（摘要免費）"
+
+  - id: trendforce_tw
+    name: 集邦科技 TrendForce（中文新聞）
+    url: https://www.trendforce.com.tw
+    feed: null
+    layer: 2
+    language: zh
+    domains: [semiconductor]
+    priority: 1
+    update_freq: 240
+    paywall: false
+    scraper: "trendforce_scraper"
+    notes: "DRAM/NAND/HBM定價週報，每週更新（記憶體漲跌核心指標）"
+
+  # ── 財報季 / 法說會 ───────────────────────────────────────────────────────
+  - id: tsmc_ir
+    name: 台積電 投資人關係
+    url: https://ir.tsmc.com/chinese/news
+    feed: null
+    layer: 2
+    language: bilingual
+    domains: [earnings, semiconductor]
+    priority: 1
+    update_freq: 1440  # Daily check
+    paywall: false
+    scraper: "tsmc_ir_scraper"
+    notes: "法說會逐字稿 (PDF)、月營收報告、重大訊息，直接下載"
+
+  - id: mtk_ir
+    name: 聯發科 投資人關係
+    url: https://corp.mediatek.com/investor-relations/news-releases
+    feed: null
+    layer: 2
+    language: bilingual
+    domains: [earnings, semiconductor]
+    priority: 2
+    update_freq: 1440
+    paywall: false
+    scraper: "generic_ir_scraper"
+
+# =============================================================================
+# 第二層：國際半導體產業 — 英文來源
+# =============================================================================
+international_semiconductor:
+
+  # ── 產業分析 / 技術評論 ──────────────────────────────────────────────────
+  - id: eetimes
+    name: EE Times
+    url: https://www.eetimes.com
+    feed: https://www.eetimes.com/feed/
+    layer: 1
+    language: en
+    domains: [semiconductor, general]
+    priority: 1
+    update_freq: 60
+    paywall: false
+    notes: "全球最權威半導體工程師媒體，深度技術分析（製程/設計/封裝）"
+
+  - id: toms_hardware_semi
+    name: Tom's Hardware 半導體
+    url: https://www.tomshardware.com/tech-industry/manufacturing/semiconductors
+    feed: https://www.tomshardware.com/feeds/all
+    layer: 1
+    language: en
+    domains: [semiconductor, general]
+    priority: 2
+    update_freq: 60
+    paywall: false
+    notes: "兼顧技術細節與市場趨勢，HBM/AI晶片覆蓋率高"
+
+  - id: digitimes_en
+    name: DigiTimes Asia（英文版）
+    url: https://www.digitimes.com
+    feed: https://www.digitimes.com/rss/daily.xml
+    layer: 1
+    language: en
+    domains: [semiconductor, general]
+    priority: 1
+    update_freq: 60
+    paywall: true
+    notes: "供應鏈情報最密集，每日更新 20+ 篇，免費摘要可用"
+
+  - id: trendforce_en
+    name: TrendForce 新聞中心（英文）
+    url: https://www.trendforce.com/presscenter
+    feed: https://www.trendforce.com/rss/presscenter.xml
+    layer: 1
+    language: en
+    domains: [semiconductor, earnings]
+    priority: 1
+    update_freq: 240
+    paywall: false
+    notes: "DRAM/NAND/HBM季度報告，定價數據最權威（完全免費）"
+    key_reports:
+      - "DRAM Contract Price"
+      - "NAND Flash Price"
+      - "HBM Quarterly Review"
+      - "Server Shipment"
+
+  - id: semiconductor_digest
+    name: Semiconductor Digest
+    url: https://www.semiconductor-digest.com
+    feed: https://www.semiconductor-digest.com/feed/
+    layer: 1
+    language: en
+    domains: [semiconductor]
+    priority: 3
+    update_freq: 120
+    paywall: false
+
+  - id: semi_org
+    name: SEMI Global Update（週報）
+    url: https://www.semi.org/en/blogs-newsletters
+    feed: https://www.semi.org/en/rss/blog-newsletter-rss-feeds.xml
+    layer: 1
+    language: en
+    domains: [semiconductor, macro]
+    priority: 2
+    update_freq: 10080  # Weekly
+    paywall: false
+    notes: "全球半導體協會週報，含設備/材料市場動態（BB Ratio等）"
+
+  # ── 深度分析 Substack / Newsletter ───────────────────────────────────────
+  - id: semianalysis
+    name: SemiAnalysis（Dylan Patel）
+    url: https://semianalysis.com
+    feed: https://semianalysis.com/feed/
+    layer: 1
+    language: en
+    domains: [semiconductor]
+    priority: 1
+    update_freq: 10080  # Weekly/biweekly
+    paywall: true
+    notes: "業界最深度的AI基礎設施分析，免費文章每月數篇（付費完整版）"
+    rss_free: "https://www.semianalysis.com/feed"
+
+  - id: chip_war_substack
+    name: Chip Wars Newsletter（Amrita Roy）
+    url: https://amritaroy.substack.com
+    feed: https://amritaroy.substack.com/feed
+    layer: 1
+    language: en
+    domains: [semiconductor, geopolitical]
+    priority: 2
+    update_freq: 10080
+    paywall: false
+    notes: "地緣政治 × 半導體科技，每週一篇，完全免費"
+
+  - id: fabricated_knowledge
+    name: Fabricated Knowledge
+    url: https://www.fabricatedknowledge.com
+    feed: https://www.fabricatedknowledge.com/feed
+    layer: 1
+    language: en
+    domains: [semiconductor]
+    priority: 2
+    update_freq: 10080
+    paywall: true
+    notes: "記憶體/AI晶片供應鏈深度分析"
+
+  - id: techinsights_blog
+    name: TechInsights Blog
+    url: https://www.techinsights.com/blog
+    feed: https://www.techinsights.com/blog/rss
+    layer: 1
+    language: en
+    domains: [semiconductor]
+    priority: 2
+    update_freq: 1440
+    paywall: false
+    notes: "晶片逆向工程 + 製程節點分析，免費摘要"
+
+# =============================================================================
+# 第三層：國際財經 & 宏觀（市場影響評估）
+# =============================================================================
+macro_financial:
+
+  # ── 主流財經媒體 ──────────────────────────────────────────────────────────
+  - id: reuters_tech
+    name: Reuters Technology
+    url: https://www.reuters.com/technology
+    feed: https://feeds.reuters.com/reuters/technologyNews
+    layer: 1
+    language: en
+    domains: [semiconductor, macro, earnings, general]
+    priority: 1
+    update_freq: 15
+    paywall: false
+    notes: "法新社即時新聞，TSMC/美光/三星財報最快"
+
+  - id: reuters_markets
+    name: Reuters Markets
+    url: https://www.reuters.com/markets
+    feed: https://feeds.reuters.com/reuters/businessNews
+    layer: 1
+    language: en
+    domains: [macro, earnings]
+    priority: 1
+    update_freq: 15
+    paywall: false
+
+  - id: ft_tech
+    name: Financial Times Technology
+    url: https://www.ft.com/technology
+    feed: https://www.ft.com/technology?format=rss
+    layer: 1
+    language: en
+    domains: [semiconductor, macro, geopolitical]
+    priority: 1
+    update_freq: 60
+    paywall: true
+    notes: "深度分析，需訂閱（摘要免費），特別是地緣政治分析"
+
+  - id: wsj_tech
+    name: Wall Street Journal Technology
+    url: https://www.wsj.com/news/technology
+    feed: https://feeds.a.dj.com/rss/RSSWSJD.xml
+    layer: 1
+    language: en
+    domains: [semiconductor, macro, earnings]
+    priority: 2
+    update_freq: 60
+    paywall: true
+    notes: "晶片出口管制、美中科技戰最詳盡"
+
+  # ── 財報專區 ──────────────────────────────────────────────────────────────
+  - id: sec_edgar_earnings
+    name: SEC EDGAR 財報公告（美國上市半導體）
+    url: https://efts.sec.gov/LATEST/search-index
+    feed: null
+    layer: 3
+    language: en
+    domains: [earnings]
+    priority: 1
+    update_freq: 1440
+    paywall: false
+    api_type: "rest"
+    api_endpoint: "https://efts.sec.gov/LATEST/search-index?q=%22semiconductor%22&dateRange=custom&forms=8-K,10-Q,10-K"
+    target_companies:
+      - {name: "TSMC ADR", ticker: "TSM", cik: "1046179"}
+      - {name: "NVIDIA", ticker: "NVDA", cik: "1045810"}
+      - {name: "Intel", ticker: "INTC", cik: "50863"}
+      - {name: "Micron", ticker: "MU", cik: "723125"}
+      - {name: "Qualcomm", ticker: "QCOM", cik: "804328"}
+      - {name: "AMD", ticker: "AMD", cik: "2488"}
+      - {name: "Broadcom", ticker: "AVGO", cik: "1730168"}
+      - {name: "ASML", ticker: "ASML", cik: "937966"}
+    notes: "8-K = 重大事件, 10-Q = 季報, 10-K = 年報，完全免費"
+
+  - id: yahoo_earnings_calendar
+    name: Yahoo Finance 財報日曆
+    url: https://finance.yahoo.com/calendar/earnings
+    feed: null
+    layer: 2
+    language: en
+    domains: [earnings]
+    priority: 2
+    update_freq: 1440
+    paywall: false
+    scraper: "yahoo_earnings_scraper"
+    target_tickers: ["TSM", "NVDA", "INTC", "MU", "QCOM", "AMD", "AVGO", "ASML", "AMAT", "KLAC"]
+    notes: "財報日期預告 + EPS預期，可用 yfinance library 讀取"
+
+  - id: seeking_alpha_semiconductor
+    name: Seeking Alpha 半導體板塊
+    url: https://seekingalpha.com/market-outlook/semiconductors
+    feed: null
+    layer: 2
+    language: en
+    domains: [earnings, semiconductor]
+    priority: 2
+    update_freq: 240
+    paywall: true
+    notes: "分析師法說會逐字稿解析，需訂閱（部分免費）"
+
+# =============================================================================
+# 第四層：地緣政治 & 國際事件
+# =============================================================================
+geopolitics:
+
+  - id: isw_china_taiwan
+    name: ISW 中台週報
+    url: https://understandingwar.org/tags/china-taiwan
+    feed: https://understandingwar.org/rss.xml
+    layer: 1
+    language: en
+    domains: [geopolitical]
+    priority: 1
+    update_freq: 10080  # Weekly
+    paywall: false
+    notes: "ISW每週台海安全報告，最詳細的軍事動態分析"
+
+  - id: aei_china_taiwan
+    name: AEI 中台情勢更新
+    url: https://www.aei.org/tag/china-taiwan/
+    feed: https://www.aei.org/feed/
+    layer: 1
+    language: en
+    domains: [geopolitical]
+    priority: 1
+    update_freq: 10080
+    paywall: false
+    filter_keywords: ["Taiwan", "semiconductor", "chip", "China"]
+    notes: "美國企業研究所：台海政策研究最系統化"
+
+  - id: csis_technology
+    name: CSIS 科技地緣政治
+    url: https://www.csis.org/topics/technology-policy
+    feed: https://www.csis.org/rss.xml
+    layer: 1
+    language: en
+    domains: [geopolitical, semiconductor]
+    priority: 2
+    update_freq: 1440
+    paywall: false
+    filter_keywords: ["semiconductor", "Taiwan", "export control", "supply chain"]
+    notes: "戰略與國際研究中心：出口管制、科技政策"
+
+  - id: diplomat_asia
+    name: The Diplomat 亞洲政治
+    url: https://thediplomat.com/category/tech-and-culture/
+    feed: https://thediplomat.com/feed/
+    layer: 1
+    language: en
+    domains: [geopolitical, macro]
+    priority: 2
+    update_freq: 1440
+    paywall: false
+    filter_keywords: ["Taiwan", "semiconductor", "chip war", "supply chain"]
+    notes: "亞洲政治專刊，台灣/印太地區地緣政治"
+
+  - id: cfr_technology
+    name: Council on Foreign Relations
+    url: https://www.cfr.org/technology-and-innovation
+    feed: https://www.cfr.org/rss/tech.xml
+    layer: 1
+    language: en
+    domains: [geopolitical, macro]
+    priority: 3
+    update_freq: 1440
+    paywall: false
+
+  - id: axios_tech
+    name: Axios Tech / China
+    url: https://www.axios.com/technology
+    feed: https://api.axios.com/feed/technology
+    layer: 1
+    language: en
+    domains: [semiconductor, geopolitical, general]
+    priority: 2
+    update_freq: 60
+    paywall: false
+    notes: "Axios China Tech Alerts：美中科技戰簡報（免費）"
+
+  - id: war_on_rocks
+    name: War on the Rocks
+    url: https://warontherocks.com/category/articles/
+    feed: https://warontherocks.com/feed/
+    layer: 1
+    language: en
+    domains: [geopolitical]
+    priority: 3
+    update_freq: 1440
+    paywall: false
+    filter_keywords: ["Taiwan", "semiconductor", "Indo-Pacific"]
+
+# =============================================================================
+# 第五層：市場定價數據（半結構化）
+# =============================================================================
+market_data:
+
+  - id: trendforce_dram_price
+    name: TrendForce DRAM 月度報價
+    url: https://datatrack.trendforce.com/Chart/content/4694/mainstream-dram-spot-price
+    feed: null
+    layer: 2
+    language: en
+    domains: [semiconductor]
+    priority: 1
+    update_freq: 10080  # 每週更新
+    paywall: false
+    scraper: "trendforce_price_scraper"
+    data_type: "price_table"
+    notes: "DRAM spot price + contract price，對 DRAM 類股估值極重要"
+
+  - id: trendforce_nand_price
+    name: TrendForce NAND Flash 報價
+    url: https://datatrack.trendforce.com
+    feed: null
+    layer: 2
+    language: en
+    domains: [semiconductor]
+    priority: 2
+    update_freq: 10080
+    paywall: false
+    scraper: "trendforce_price_scraper"
+
+  - id: bloomberg_semis_index
+    name: Philadelphia Semiconductor Index（SOX）
+    url: https://finance.yahoo.com/quote/%5ESOX/
+    feed: null
+    layer: 3
+    language: en
+    domains: [macro, semiconductor]
+    priority: 1
+    update_freq: 30
+    paywall: false
+    api_type: "yfinance"
+    ticker: "^SOX"
+    notes: "費城半導體指數，與台積電股價高度相關"
+
+# =============================================================================
+# 第六層：Premium（人工上傳或 Email 解析）
+# =============================================================================
+premium:
+
+  - id: gartner_forecast
+    name: Gartner 半導體預測報告
+    layer: 4
+    language: en
+    domains: [semiconductor, macro]
+    priority: 1
+    paywall: true
+    access: "manual_upload"
+    notes: "每季更新半導體市場規模預測，需購買或從 IR 報告引用"
+    file_format: "pdf"
+
+  - id: ic_insights
+    name: IC Insights 晶片市場報告
+    layer: 4
+    language: en
+    domains: [semiconductor]
+    priority: 1
+    paywall: true
+    access: "manual_upload"
+    notes: "按產品類型細分的晶片市場份額"
+
+  - id: techinsights_teardown
+    name: TechInsights 晶片逆向分析
+    layer: 4
+    language: en
+    domains: [semiconductor]
+    priority: 2
+    paywall: true
+    access: "newsletter_email"
+    notes: "最新 AI 晶片逆向工程報告（NVIDIA B200/H200/Blackwell）"
+
+  - id: morgan_stanley_semi
+    name: Morgan Stanley 半導體研究報告
+    layer: 4
+    language: en
+    domains: [semiconductor, earnings]
+    priority: 1
+    paywall: true
+    access: "brokerage_account"
+    notes: "需券商帳戶，研究員每季更新目標價"
+
+  - id: digitimes_research
+    name: DigiTimes Research 深度報告
+    layer: 4
+    language: zh
+    domains: [semiconductor]
+    priority: 1
+    paywall: true
+    access: "subscription"
+    url: https://www.digitimes.com/research/
+    notes: "台灣供應鏈最深度報告，需付費訂閱"
+
+  - id: semi_org_sicas
+    name: SEMI Silicon Manufacturers Group (SICAS)
+    layer: 4
+    language: en
+    domains: [semiconductor]
+    priority: 2
+    paywall: false
+    access: "form_registration"
+    url: https://www.semi.org/en/products-services/market-data/sicas
+    notes: "晶圓廠產能利用率季報，需填表申請，免費"

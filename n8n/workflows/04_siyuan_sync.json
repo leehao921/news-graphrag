@@ -1,0 +1,229 @@
+{
+  "name": "04 SiYuan Knowledge Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "siyuan/ingest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-siyuan-ingest",
+      "name": "Webhook: Article Ingest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "notes": "接收 FastAPI 推送的文章/報告，同步至 SiYuan"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "triggerAtHour": 7, "triggerAtMinute": 35 }]
+        }
+      },
+      "id": "cron-daily-sync",
+      "name": "Cron: 07:35 Daily Sync",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 500],
+      "notes": "每日 07:35 (報告產生後5分鐘) 將昨日文章摘要推送 SiYuan"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "http://api:8000/knowledge/siyuan/daily-batch",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "date", "value": "={{ $now.toFormat('yyyy-MM-dd') }}" },
+            { "name": "include_signals", "value": true },
+            { "name": "include_geo", "value": true }
+          ]
+        },
+        "options": { "timeout": 60000 }
+      },
+      "id": "http-daily-batch",
+      "name": "API: Daily Batch to SiYuan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 判斷文章類型，路由至對應 SiYuan 端點\nconst body = $input.first().json.body || {};\nconst articleType = body.category || 'general';\n\nconst routeMap = {\n  'semiconductor': '/knowledge/siyuan/semiconductor',\n  'geopolitical': '/knowledge/siyuan/geopolitical',\n  'earnings': '/knowledge/siyuan/semiconductor',\n  'tmf_signal': '/knowledge/siyuan/tmf-signal',\n  'general': '/knowledge/siyuan/semiconductor',\n};\n\nreturn [{\n  json: {\n    ...body,\n    target_endpoint: routeMap[articleType] || routeMap['general'],\n    routed_at: new Date().toISOString(),\n  }\n}];"
+      },
+      "id": "router-article-type",
+      "name": "Code: Route by Article Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "=http://api:8000{{ $json.target_endpoint }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "title", "value": "={{ $json.title }}" },
+            { "name": "content", "value": "={{ $json.summary || $json.content }}" },
+            { "name": "category", "value": "={{ $json.sub_category || 'General' }}" },
+            { "name": "ticker", "value": "={{ $json.ticker }}" },
+            { "name": "impact_level", "value": "={{ $json.impact_level || 'medium' }}" },
+            { "name": "taiex_impact", "value": "={{ $json.taiex_impact }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "http-push-siyuan",
+      "name": "API: Push to SiYuan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "GET",
+        "url": "http://api:8000/knowledge/siyuan/health",
+        "options": { "timeout": 5000 }
+      },
+      "id": "http-siyuan-health",
+      "name": "API: Check SiYuan Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 160],
+      "notes": "每次同步前確認 SiYuan 在線"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-siyuan-online",
+      "name": "IF: SiYuan Online?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [740, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"synced\", \"doc_id\": \"{{ $json.doc_id }}\" }"
+      },
+      "id": "respond-success",
+      "name": "Respond: Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "siyuan:last_sync",
+        "value": "={{ $now.toISO() }}",
+        "keyType": "string",
+        "expireTime": 86400
+      },
+      "id": "redis-record-sync",
+      "name": "Redis: Record Last Sync",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1060, 500],
+      "credentials": {
+        "redis": { "id": "redis-cred", "name": "Redis graphrag" }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 9, "triggerAtMinute": 5 },
+            { "triggerAtHour": 13, "triggerAtMinute": 30 }
+          ]
+        }
+      },
+      "id": "cron-tmf-signal-push",
+      "name": "Cron: TMF Signal Snapshots",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 700],
+      "notes": "9:05 開盤後、13:30 收盤前 快照 TMF 信號到 SiYuan"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "http://api:8000/knowledge/siyuan/tmf-signal-snapshot",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "snapshot_type", "value": "={{ $now.toFormat('HH') < '10' ? 'open' : 'close' }}" },
+            { "name": "timestamp", "value": "={{ $now.toISO() }}" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "http-tmf-snapshot",
+      "name": "API: TMF Signal Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 700]
+    }
+  ],
+  "connections": {
+    "Webhook: Article Ingest": {
+      "main": [[{ "node": "Code: Route by Article Type", "type": "main", "index": 0 }]]
+    },
+    "Cron: 07:35 Daily Sync": {
+      "main": [[{ "node": "API: Check SiYuan Health", "type": "main", "index": 0 }]]
+    },
+    "API: Check SiYuan Health": {
+      "main": [[{ "node": "IF: SiYuan Online?", "type": "main", "index": 0 }]]
+    },
+    "IF: SiYuan Online?": {
+      "main": [
+        [{ "node": "API: Daily Batch to SiYuan", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Code: Route by Article Type": {
+      "main": [[{ "node": "API: Push to SiYuan", "type": "main", "index": 0 }]]
+    },
+    "API: Push to SiYuan": {
+      "main": [[{ "node": "Respond: Success", "type": "main", "index": 0 }]]
+    },
+    "API: Daily Batch to SiYuan": {
+      "main": [[{ "node": "Redis: Record Last Sync", "type": "main", "index": 0 }]]
+    },
+    "Cron: TMF Signal Snapshots": {
+      "main": [[{ "node": "API: TMF Signal Snapshot", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["graphrag", "siyuan", "knowledge-base"],
+  "triggerCount": 3,
+  "updatedAt": "2026-03-01T00:00:00.000Z",
+  "versionId": "04-siyuan-sync-v1"
+}

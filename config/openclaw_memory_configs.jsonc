@@ -1,0 +1,174 @@
+// OpenClaw memory 設定選項
+// 將對應區塊複製到 ~/.openclaw/openclaw.json 的 memory 欄位
+// ──────────────────────────────────────────────────────────────
+
+// ====================================================================
+// PATH A：Ollama 直連（最快啟用，0 行程式碼）
+// 需求：ollama pull bge-m3（約 1.2GB）
+// ====================================================================
+{
+  "PATH_A_OLLAMA_DIRECT": {
+    "memory": {
+      "provider": "openai",
+      "model": "bge-m3",
+      "remote": {
+        "baseUrl": "http://localhost:11434/v1",
+        "apiKey": "ollama"
+      },
+      "query": {
+        "maxResults": 8,
+        "minScore": 0.30,
+        "hybrid": {
+          "enabled": true,
+          "vectorWeight": 0.75,
+          "textWeight": 0.25,
+          "mmr": { "enabled": true, "lambda": 0.7 },
+          "temporalDecay": { "enabled": true, "halfLifeDays": 14 }
+        }
+      },
+      "chunking": { "tokens": 350, "overlap": 70 },
+      "extraPaths": [
+        "knowledge/semiconductor",
+        "knowledge/vendor",
+        "knowledge/trading"
+      ],
+      "sync": {
+        "onSessionStart": true,
+        "onSearch": true,
+        "watch": true
+      }
+    }
+  },
+
+  // ====================================================================
+  // PATH B：Local GGUF（純離線，OpenClaw 原生支援）
+  // 下載一次後完全離線
+  // ====================================================================
+  "PATH_B_LOCAL_GGUF": {
+    "memory": {
+      "provider": "local",
+      "local": {
+        "modelPath": "hf:ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf",
+        "modelCacheDir": "~/.openclaw/model-cache"
+      },
+      "query": {
+        "maxResults": 6,
+        "minScore": 0.25,
+        "hybrid": {
+          "enabled": true,
+          "vectorWeight": 0.65,
+          "textWeight": 0.35
+        }
+      },
+      "chunking": { "tokens": 300, "overlap": 60 },
+      "extraPaths": [
+        "knowledge/semiconductor",
+        "knowledge/trading"
+      ]
+    }
+  },
+
+  // ====================================================================
+  // PATH C：Embedding Bridge（推薦，統一語義空間）
+  // 需求：docker compose up embed-bridge
+  // Bridge 在 localhost:11235 提供 OpenAI 相容 API
+  // ====================================================================
+  "PATH_C_EMBEDDING_BRIDGE": {
+    "memory": {
+      "provider": "openai",
+      "model": "BAAI/bge-m3",
+      "remote": {
+        "baseUrl": "http://localhost:11235/v1",
+        "apiKey": "local-bridge",
+        "batch": {
+          "enabled": false   // Bridge 已內建批次，不需要 OpenClaw 再批次
+        }
+      },
+      "query": {
+        "maxResults": 10,
+        "minScore": 0.28,
+        "hybrid": {
+          "enabled": true,
+          "vectorWeight": 0.75,
+          "textWeight": 0.25,
+          "mmr": { "enabled": true, "lambda": 0.72 },
+          "temporalDecay": {
+            "enabled": true,
+            "halfLifeDays": 14
+          },
+          "candidateMultiplier": 5
+        }
+      },
+      "chunking": { "tokens": 350, "overlap": 80 },
+      "extraPaths": [
+        "knowledge/semiconductor",
+        "knowledge/vendor",
+        "knowledge/trading"
+      ],
+      "sync": {
+        "onSessionStart": true,
+        "onSearch": true,
+        "watch": true,
+        "watchDebounceMs": 2000,
+        "intervalMinutes": 30
+      },
+      "cache": {
+        "enabled": true
+      }
+    }
+  },
+
+  // ====================================================================
+  // PATH D：QMD + Qdrant（最進階，完整替換 SQLite）
+  // 需求：
+  //   1. Qdrant 服務在 localhost:6333
+  //   2. Embedding Bridge 在 localhost:11235
+  //   3. python3 scripts/qmd_qdrant.py 可執行
+  //   4. 先執行：python3 scripts/qmd_qdrant.py update
+  // ====================================================================
+  "PATH_D_QMD_QDRANT": {
+    "memory": {
+      "backend": "qmd",
+      "qmd": {
+        "command": "python3 /home/felix/.openclaw/workspace/knowledge/news-graphrag/scripts/qmd_qdrant.py",
+        "searchMode": "vsearch",
+        "collections": [
+          {
+            "path": "~/.openclaw/workspace",
+            "pattern": "MEMORY.md",
+            "name": "memory-root"
+          },
+          {
+            "path": "~/.openclaw/workspace/memory",
+            "pattern": "**/*.md",
+            "name": "memory-dir"
+          },
+          {
+            "path": "~/.openclaw/workspace/knowledge",
+            "pattern": "**/*.md",
+            "name": "knowledge-base"
+          }
+        ],
+        "includeDefaultMemory": false,
+        "update": {
+          "interval": "5m",
+          "debounceMs": 2000,
+          "onBoot": true,
+          "embedInterval": "60m",
+          "commandTimeoutMs": 30000,
+          "updateTimeoutMs": 120000
+        },
+        "limits": {
+          "maxResults": 10,
+          "maxSnippetChars": 700,
+          "maxInjectedChars": 5000,
+          "timeoutMs": 5000
+        },
+        "scope": {
+          "default": "allow",
+          "rules": []
+        }
+      }
+    }
+  }
+}

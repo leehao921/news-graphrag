@@ -1,0 +1,138 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "news-graphrag"
+version = "0.1.0"
+description = "新聞 GraphRAG：向量搜尋 × 知識圖譜 × 向量轉移"
+requires-python = ">=3.11"
+
+dependencies = [
+    # 向量資料庫
+    "qdrant-client>=1.9.0",
+
+    # 報告生成
+    "jinja2>=3.1.0",
+    "weasyprint>=62.0",        # HTML → PDF
+    "markdown>=3.6",            # Markdown → HTML
+
+    # 物件儲存（MinIO S3）
+    "minio>=7.2.0",            # MinIO Python SDK
+
+    # DolphinScheduler（可選）
+    # "apache-dolphinscheduler>=4.0.0",
+
+    # 圖資料庫
+    "neo4j>=5.18.0",
+
+    # 嵌入 / NLP
+    "httpx>=0.27.0",       # Ollama API 呼叫
+    "jieba>=0.42.1",
+    "gliner>=0.2.5",
+    "opencc-python-reimplemented>=0.1.7",  # 繁簡轉換
+
+    # 關聯式資料庫
+    "asyncpg>=0.29.0",
+    "sqlalchemy[asyncio]>=2.0",
+
+    # 快取
+    "redis>=5.0",
+
+    # API 框架
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+
+    # 資料模型
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+
+    # 排程
+    "apscheduler>=3.10.4",
+
+    # 爬蟲
+    "playwright>=1.44.0",
+    "feedparser>=6.0.11",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.2.0",
+
+    # 工具
+    "numpy>=1.26.0",
+    "python-dotenv>=1.0.0",
+    "structlog>=24.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # 測試
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "httpx>=0.27",           # ASGI TestClient
+    "faker>=24.0",
+    "respx>=0.21",           # HTTP mock
+    # 程式碼品質
+    "ruff>=0.4.0",
+    "mypy>=1.9",
+    "types-redis",
+    "bandit>=1.7",
+    # Embedding Bridge 額外依賴
+    "sentence-transformers>=3.3",
+    "torch>=2.5",
+]
+embed = [
+    "sentence-transformers>=3.3",
+    "torch>=2.5",
+    "redis[asyncio]>=5.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = [
+    "--tb=short",
+    "-q",
+]
+markers = [
+    "integration: 需要外部服務（docker compose up）",
+    "slow: 執行時間 > 5 秒",
+    "embed: 需要 Embedding Bridge",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/**/__init__.py", "tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+fail_under = 75
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "RUF"]
+ignore = [
+    "E501",  # line too long（由 formatter 處理）
+    "B008",  # FastAPI Depends() 模式
+    "N803",  # 允許大寫變數名稱（如 BGE-M3）
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+no_strict_optional = true
+warn_return_any = false

@@ -1,0 +1,196 @@
+{
+  "name": "03 - 財報 & 重大事件警報",
+  "nodes": [
+    {
+      "id": "mops_trigger",
+      "name": "MOPS 重大訊息輪詢",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [100, 200],
+      "parameters": {
+        "rule": {"interval": [{"field": "minutes", "minutesInterval": 30}]}
+      },
+      "notes": "平日 08:00-18:00 每30分鐘掃描 MOPS"
+    },
+    {
+      "id": "scrape_mops",
+      "name": "爬取 MOPS 重大訊息",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [300, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/scrape/mops",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "tickers", "value": ["2330","2454","2317","2308","2382","2303","3711","3034","2379"]},
+            {"name": "lookback_hours", "value": 1}
+          ]
+        },
+        "options": {"timeout": 60000}
+      }
+    },
+    {
+      "id": "sec_edgar_trigger",
+      "name": "SEC EDGAR 夜間掃描",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [100, 400],
+      "parameters": {
+        "rule": {"interval": [{"field": "cronExpression", "expression": "0 21 * * 1-5"}]}
+      },
+      "notes": "台北時間 21:00（美東 08:00），美股開盤後掃描 8-K 公告"
+    },
+    {
+      "id": "fetch_edgar",
+      "name": "查詢 SEC EDGAR API",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [300, 400],
+      "parameters": {
+        "method": "GET",
+        "url": "https://efts.sec.gov/LATEST/search-index",
+        "queryParameters": {
+          "parameters": [
+            {"name": "q",        "value": "semiconductor"},
+            {"name": "forms",    "value": "8-K"},
+            {"name": "dateRange","value": "custom"},
+            {"name": "startdt", "value": "={{ DateTime.now().minus({days:1}).toFormat('yyyy-MM-dd') }}"},
+            {"name": "enddt",   "value": "={{ DateTime.now().toFormat('yyyy-MM-dd') }}"}
+          ]
+        },
+        "options": {
+          "headers": [{"name": "User-Agent", "value": "GraphRAG-NewsBot/1.0"}]
+        }
+      }
+    },
+    {
+      "id": "filter_earnings",
+      "name": "篩選財報相關公告",
+      "type": "n8n-nodes-base.filter",
+      "position": [500, 300],
+      "parameters": {
+        "conditions": {
+          "string": [{
+            "value1": "={{ $json.display_names.join(',') }}",
+            "operation": "containsAnyOf",
+            "value2": "TSMC,Nvidia,Intel,Micron,ASML,Qualcomm,AMD,Broadcom,Applied Materials"
+          }]
+        }
+      }
+    },
+    {
+      "id": "analyze_earnings",
+      "name": "FastAPI 分析財報影響",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [700, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/report/earnings-analysis",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "company",    "value": "={{ $json.company_name }}"},
+            {"name": "form_type",  "value": "={{ $json.form_type }}"},
+            {"name": "filing_url", "value": "={{ $json.filing_url }}"},
+            {"name": "analysis_focus", "value": ["taiwan_supply_chain", "ai_chip_demand", "dram_pricing", "tmf_impact"]}
+          ]
+        }
+      }
+    },
+    {
+      "id": "store_analysis",
+      "name": "存入 PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "position": [900, 300],
+      "parameters": {
+        "operation": "insert",
+        "table": "earnings_alerts",
+        "columns": "company,form_type,summary,taiwan_impact_score,tmf_direction,created_at",
+        "values": "={{ $json.company }},{{ $json.form_type }},{{ $json.summary }},{{ $json.taiwan_impact_score }},{{ $json.tmf_direction }},NOW()"
+      }
+    },
+    {
+      "id": "urgent_alert",
+      "name": "重大影響警報",
+      "type": "n8n-nodes-base.if",
+      "position": [1100, 300],
+      "parameters": {
+        "conditions": {
+          "number": [{"value1": "={{ $json.taiwan_impact_score }}", "operation": "larger", "value2": 7}]
+        }
+      }
+    },
+    {
+      "id": "send_urgent_whatsapp",
+      "name": "緊急 WhatsApp 警報",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1300, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11235/message/send",
+        "body": "={{ JSON.stringify({ \"to\": \"+886936737850\", \"message\": '🚨 **財報警報** | ' + $json.company + '\\n\\n' + $json.summary + '\\n\\n📊 台灣影響分數: ' + $json.taiwan_impact_score + '/10\\n方向: ' + $json.tmf_direction }) }}"
+      }
+    },
+    {
+      "id": "trendforce_weekly",
+      "name": "TrendForce 週一定價掃描",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [100, 600],
+      "parameters": {
+        "rule": {"interval": [{"field": "cronExpression", "expression": "0 10 * * 1"}]}
+      },
+      "notes": "週一10:00掃描 TrendForce 記憶體定價報告"
+    },
+    {
+      "id": "scrape_trendforce",
+      "name": "爬取 TrendForce 定價",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [300, 600],
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/scrape/trendforce-pricing",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "products", "value": ["DRAM", "NAND", "HBM"]}
+          ]
+        }
+      }
+    },
+    {
+      "id": "pricing_alert",
+      "name": "定價變動超過 5%?",
+      "type": "n8n-nodes-base.if",
+      "position": [500, 600],
+      "parameters": {
+        "conditions": {
+          "number": [{"value1": "={{ Math.abs($json.dram_qoq_change) }}", "operation": "larger", "value2": 5}]
+        }
+      }
+    },
+    {
+      "id": "send_pricing_alert",
+      "name": "定價警報 WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [700, 550],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11235/message/send",
+        "body": "={{ JSON.stringify({ \"to\": \"+886936737850\", \"message\": '💾 **DRAM 定價更新**\\n\\nDRAM QoQ: ' + $json.dram_qoq_change + '%\\nNAND QoQ: ' + $json.nand_qoq_change + '%\\nHBM: ' + $json.hbm_status + '\\n\\n台灣記憶體股影響: ' + $json.tw_memory_impact }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "MOPS 重大訊息輪詢": {"main": [[{"node": "爬取 MOPS 重大訊息", "type": "main", "index": 0}]]},
+    "爬取 MOPS 重大訊息": {"main": [[{"node": "FastAPI 分析財報影響", "type": "main", "index": 0}]]},
+    "SEC EDGAR 夜間掃描": {"main": [[{"node": "查詢 SEC EDGAR API", "type": "main", "index": 0}]]},
+    "查詢 SEC EDGAR API": {"main": [[{"node": "篩選財報相關公告", "type": "main", "index": 0}]]},
+    "篩選財報相關公告": {"main": [[{"node": "FastAPI 分析財報影響", "type": "main", "index": 0}], []]},
+    "FastAPI 分析財報影響": {"main": [[{"node": "存入 PostgreSQL", "type": "main", "index": 0}]]},
+    "存入 PostgreSQL": {"main": [[{"node": "重大影響警報", "type": "main", "index": 0}]]},
+    "重大影響警報": {"main": [[{"node": "緊急 WhatsApp 警報", "type": "main", "index": 0}], []]},
+    "TrendForce 週一定價掃描": {"main": [[{"node": "爬取 TrendForce 定價", "type": "main", "index": 0}]]},
+    "爬取 TrendForce 定價": {"main": [[{"node": "定價變動超過 5%?", "type": "main", "index": 0}]]},
+    "定價變動超過 5%?": {"main": [[{"node": "定價警報 WhatsApp", "type": "main", "index": 0}], []]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "tags": ["earnings", "alerts", "mops", "trendforce"]
+}
